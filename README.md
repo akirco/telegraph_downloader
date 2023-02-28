@@ -13,3 +13,8 @@
 - export telegram `result.json` file
 
 - paser file & download it
+
+```
+.\TelegraphDownloader.ps1 -PaserFile "path to result.json"
+
+```
