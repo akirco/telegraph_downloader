@@ -14,7 +14,16 @@
 
 - paser file & download it
 
-```
+```shell
 .\TelegraphDownloader.ps1 -PaserFile "path to result.json"
+
+```
+
+## Development
+
+```shell
+
+.\ParserFile.ps1 -PaserFile .\result.json
+
 
 ```

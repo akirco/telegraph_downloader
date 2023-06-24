@@ -18,49 +18,83 @@ function DownTelegraph {
         Write-Host "Please enter the named `Result` json file path..." -ForegroundColor DarkCyan
     } 
     if (Test-Path .\TEMP) {
-        <# Action to perform if the condition is true #>
-        $URLS = Get-Content -Path .\TEMP -Delimiter ":"
+        $URLS = (Get-Content -Path .\TEMP).Split("\n").Trim()
+
         $Target = @()
         $EndPrefix = "?return_content=true"
-        $StratPrefix = "https://telegra.ph"
+        
         $URLS | ForEach-Object {
-            if ($_.StartsWith("//")) {
-                if ($_.contains('"text":')) {
-                    $Target += [string]$_.replace('"text":', "").replace('//telegra.ph', "https://api.telegra.ph/getPage").replace('"', "") + $EndPrefix
-                }
-                if ($_.contains('"href":')) {
-                    $Target += [string]$_.replace('"href":', "").replace('//telegra.ph', "https://api.telegra.ph/getPage").replace('"', "") + $EndPrefix
-                }
+    
+            if ($_.contains('"text":')) {
+                $Target += $_.replace('"text":', "").replace('telegra.ph', "api.telegra.ph/getPage").replace('"', "") + $EndPrefix
             }
+
+            if ($_.contains('"href":')) {
+                $Target += $_.replace('"href":', "").replace('telegra.ph', "api.telegra.ph/getPage").replace('"', "") + $EndPrefix
+            }
+
         }
-        $Target | ForEach-Object {
-            $WebJSONData = Invoke-WebRequest -Uri $_ -Method Get -ContentType "application/json; charset=utf-8" -ErrorAction SilentlyContinue
-            $Images = (ConvertFrom-Json $WebJSONData.Content).result.content
+        # Download images in parallel using -AsJob
+        $Target | ForEach-Object -Parallel {
+            $url = $_
+            # Suppress error messages
+            $ErrorActionPreference = 'SilentlyContinue'
+
+            # Download JSON data from URL
+            $WebJSONData = Invoke-WebRequest -Uri $url -ErrorAction SilentlyContinue -UseBasicParsing
+
+            # Extract title and image URLs from JSON data
             $Title = (ConvertFrom-Json $WebJSONData.Content).result.title
-            $StorePath = ".\\Images\\$Title"
-            if(Test-Path $StorePath){
-                Write-Host "Path is exist."
-            }else{
-                New-Item -ItemType Directory -Path $StorePath
+            $Images = (ConvertFrom-Json $WebJSONData.Content).result.content | Where-Object { $_.children[0].tag -eq "img" }
+            $Count = $Images | Measure-Object | Select-Object -ExpandProperty Count
+
+            Write-Host "Downloading: title:"$Title "total:"$Count
+
+            # Create directory for images
+            $StorePath = ".\Images\$Title"
+    
+            $StratPrefix = "https://telegra.ph"
+            if (Test-Path $StorePath) {
+                return
             }
-            Write-Host $Title
+            else {
+                New-Item -ItemType Directory -Path $StorePath > $null
+            }
+
+            # Download images
             $Images | ForEach-Object {
-                if ($null -eq $_.children -or $_.children.Length -eq 0) {
-                    Write-Host "Null file..." -ForegroundColor Red
+                $ImgObject = $_.children | Where-Object { $_.tag -eq "img" }
+                if ($null -eq $ImgObject) {
+                    Write-Host "No image found..." -ForegroundColor Red
                 }
                 else {
-                    $ImageUrl = $_.children[0].attrs.src
+                    $ImageUrl = $ImgObject.attrs.src
                     if ($ImageUrl) {
                         $ImageName = $ImageUrl.replace("/file/", "")
-                        Write-Host "即将下载:" $StratPrefix$ImageUrl -ForegroundColor Magenta
-                        Invoke-WebRequest -Uri $StratPrefix$ImageUrl -OutFile $StorePath\$ImageName -ErrorAction SilentlyContinue 
+                        $OUTPUT = Join-Path $StorePath $ImageName
+                        # Get current image index and total count
+                        $Index = $Images.IndexOf($_) + 1
+                        $Progress = "$Index/$Count"
+                        Write-Host "Downloading: [$Progress]  $Title   $StratPrefix$ImageUrl" -ForegroundColor Magenta            
+                        # Download image using Invoke-WebRequest and -OutBuffer
+                        try {
+                            $ProgressPreference = 'SilentlyContinue'
+                            Invoke-WebRequest -Uri $StratPrefix$ImageUrl -OutFile "$OUTPUT" -ErrorAction Stop -UseBasicParsing -OutBuffer 65536
+                        }
+                        catch {
+                            Write-Host "Error downloading image: $_" -ForegroundColor Red
+                        }
                     }
                     else {
                         Write-Host "Null file..." -ForegroundColor Red
                     }
-                }   
+                }
+
             }
-        }
+        } -ThrottleLimit 10
+
+        # Wait for all jobs to complete and receive results
+        Get-Job | Wait-Job | Receive-Job
     }
     else {
         Write-Host "Please check named `TEMP` file is available..."

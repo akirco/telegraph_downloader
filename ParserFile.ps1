@@ -1,9 +1,10 @@
-function PaserFile {
-    param (
-        [String]$PaserFile
-    )
+param (
+    [Parameter(Mandatory = $False)]
+    [String]$ParserFile
+)
+function ParserFile {
     if($PaserFile){
-        Select-String -Path $PaserFile -Pattern "https://telegra.ph/" -AllMatches  | 
+        Select-String -Path $ParserFile -Pattern "telegra.ph/" -AllMatches  | 
         Select-Object Line -Unique | 
         Format-Table -HideTableHeaders | 
         Out-String | 
@@ -13,5 +14,5 @@ function PaserFile {
         Write-Host "Please enter the named `Result` json file path..." -ForegroundColor DarkCyan
     } 
 }
-
+PaserFile $ParserFile
 
